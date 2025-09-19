@@ -1,0 +1,74 @@
+from flask import Flask, request, jsonify
+import requests
+import re
+
+app = Flask(__name__)
+
+@app.route("/tiktok-user", methods=["GET"])
+def tiktok_user():
+    username = request.args.get("username")
+    if not username:
+        return jsonify({"error": "missing username"}), 400
+
+    url = f"https://www.tiktok.com/@{username}"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return jsonify({"error": "User not found"}), 404
+
+        html = resp.text
+
+        # استخراج البيانات الأساسية من الصفحة باستخدام regex
+        data = {}
+
+        # Display name
+        match = re.search(r'"nickname":"(.*?)"', html)
+        data["display_name"] = match.group(1) if match else None
+
+        # Username
+        match = re.search(r'"uniqueId":"(.*?)"', html)
+        data["username"] = match.group(1) if match else username
+
+        # Bio
+        match = re.search(r'"signature":"(.*?)"', html)
+        data["bio"] = match.group(1) if match else None
+
+        # Followers
+        match = re.search(r'"followerCount":(\d+)', html)
+        data["followers"] = int(match.group(1)) if match else None
+
+        # Following
+        match = re.search(r'"followingCount":(\d+)', html)
+        data["following"] = int(match.group(1)) if match else None
+
+        # Likes
+        match = re.search(r'"heartCount":(\d+)', html)
+        data["likes"] = int(match.group(1)) if match else None
+
+        # Country / Region
+        match = re.search(r'"region":"(.*?)"', html)
+        data["region"] = match.group(1) if match else None
+
+        # Creation date (قد يكون غير متوفر)
+        match = re.search(r'"createTime":(\d+)', html)
+        if match:
+            from datetime import datetime
+            data["create_time"] = datetime.utcfromtimestamp(int(match.group(1))).strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            data["create_time"] = None
+
+        # Profile URL
+        data["profile_url"] = f"https://www.tiktok.com/@{username}"
+
+        return jsonify(data)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
