@@ -45,14 +45,27 @@ def get_tiktok_user():
         }
         resp = requests.get(url, headers=headers)
 
-        # نبحث عن window.__INIT_PROPS__ = {....};
-        match = re.search(r"window\.__INIT_PROPS__\s*=\s*({.*?});</script>", resp.text, re.S)
-        if not match:
+        # نلقط أي بلوك JSON كبير
+        matches = re.findall(r"{\"props\":.*}</script>", resp.text, re.S)
+        if not matches:
             return jsonify({"error": "ما قدرت ألقط JSON من الصفحة"}), 500
 
-        data = json.loads(match.group(1))
+        # ناخذ أول واحد
+        raw_json = matches[0]
+        raw_json = raw_json[:raw_json.rfind("}")+1]  # نتاكد ينتهي بـ }
 
-        user_info = data.get(f"/@{username}", {}).get("webapp.user-detail", {}).get("userInfo", {})
+        data = json.loads(raw_json)
+
+        # ندور على userInfo
+        user_info = None
+        for k, v in data.items():
+            if isinstance(v, dict) and "webapp.user-detail" in v:
+                user_info = v["webapp.user-detail"].get("userInfo", {})
+                break
+
+        if not user_info:
+            return jsonify({"error": "ما لقيت userInfo"}), 500
+
         user = user_info.get("user", {})
         stats = user_info.get("stats", {})
 
