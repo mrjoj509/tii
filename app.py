@@ -22,62 +22,46 @@ def tiktok_user():
             return jsonify({"error": "User not found"}), 404
 
         html = resp.text
-        data = {}
 
-        # Display name
-        match = re.search(r'"nickname":"(.*?)"', html)
-        data["display_name"] = match.group(1) if match else None
+        # ====== user info ======
+        user = {}
+        user["id"] = re.search(r'"id":"(\d+)"', html).group(1) if re.search(r'"id":"(\d+)"', html) else None
+        user["uniqueId"] = re.search(r'"uniqueId":"(.*?)"', html).group(1) if re.search(r'"uniqueId":"(.*?)"', html) else username
+        user["nickname"] = re.search(r'"nickname":"(.*?)"', html).group(1) if re.search(r'"nickname":"(.*?)"', html) else None
+        user["signature"] = re.search(r'"signature":"(.*?)"', html).group(1) if re.search(r'"signature":"(.*?)"', html) else None
+        user["avatarLarger"] = re.search(r'"avatarLarger":"(.*?)"', html).group(1) if re.search(r'"avatarLarger":"(.*?)"', html) else None
+        user["avatarMedium"] = re.search(r'"avatarMedium":"(.*?)"', html).group(1) if re.search(r'"avatarMedium":"(.*?)"', html) else None
+        user["avatarThumb"] = re.search(r'"avatarThumb":"(.*?)"', html).group(1) if re.search(r'"avatarThumb":"(.*?)"', html) else None
+        user["createTime"] = int(re.search(r'"createTime":(\d+)', html).group(1)) if re.search(r'"createTime":(\d+)', html) else None
+        verified_match = re.search(r'"verified":(true|false)', html)
+        user["verified"] = True if verified_match and verified_match.group(1)=="true" else False
+        user["region"] = re.search(r'"region":"(.*?)"', html).group(1) if re.search(r'"region":"(.*?)"', html) else None
+        user["country"] = None  # لايوجد مصدر مباشر للدولة
+        user["language"] = re.search(r'"language":"(.*?)"', html).group(1) if re.search(r'"language":"(.*?)"', html) else None
+        user["secUid"] = re.search(r'"secUid":"(.*?)"', html).group(1) if re.search(r'"secUid":"(.*?)"', html) else None
 
-        # Username
-        match = re.search(r'"uniqueId":"(.*?)"', html)
-        data["username"] = match.group(1) if match else username
+        # ====== stats ======
+        stats = {}
+        stats["followerCount"] = int(re.search(r'"followerCount":(\d+)', html).group(1)) if re.search(r'"followerCount":(\d+)', html) else 0
+        stats["followingCount"] = int(re.search(r'"followingCount":(\d+)', html).group(1)) if re.search(r'"followingCount":(\d+)', html) else 0
+        stats["heart"] = int(re.search(r'"heartCount":(\d+)', html).group(1)) if re.search(r'"heartCount":(\d+)', html) else 0
+        stats["heartCount"] = stats["heart"]
+        stats["videoCount"] = int(re.search(r'"videoCount":(\d+)', html).group(1)) if re.search(r'"videoCount":(\d+)', html) else 0
+        stats["diggCount"] = 0
+        stats["friendCount"] = int(re.search(r'"friendCount":(\d+)', html).group(1)) if re.search(r'"friendCount":(\d+)', html) else 0
 
-        # User ID
-        match = re.search(r'"id":"(\d+)"', html)
-        data["user_id"] = match.group(1) if match else None
+        # ====== statsV2 (كـ strings) ======
+        statsV2 = {k:str(v) for k,v in stats.items()}
 
-        # Bio / Signature
-        match = re.search(r'"signature":"(.*?)"', html)
-        data["bio"] = match.group(1) if match else None
+        # ====== response ======
+        response = {
+            "user": user,
+            "stats": stats,
+            "statsV2": statsV2,
+            "itemList": []
+        }
 
-        # Followers
-        match = re.search(r'"followerCount":(\d+)', html)
-        data["followers"] = int(match.group(1)) if match else None
-
-        # Following
-        match = re.search(r'"followingCount":(\d+)', html)
-        data["following"] = int(match.group(1)) if match else None
-
-        # Likes / Hearts
-        match = re.search(r'"heartCount":(\d+)', html)
-        data["likes"] = int(match.group(1)) if match else None
-
-        # Avatar
-        match = re.search(r'"avatarLarger":"(.*?)"', html)
-        data["avatar"] = match.group(1) if match else None
-
-        # Region
-        match = re.search(r'"region":"(.*?)"', html)
-        data["region"] = match.group(1) if match else None
-
-        # Country (فارغ إذا ما فيه بيانات دقيقة)
-        data["country"] = None
-
-        # Creation Time
-        match = re.search(r'"createTime":(\d+)', html)
-        if match:
-            data["create_time"] = datetime.utcfromtimestamp(int(match.group(1))).strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            data["create_time"] = None
-
-        # Verified
-        match = re.search(r'"verified":(true|false)', html)
-        data["verified"] = True if match and match.group(1) == "true" else False
-
-        # Profile URL
-        data["profile_url"] = f"https://www.tiktok.com/@{username}"
-
-        return jsonify(data)
+        return jsonify(response)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
