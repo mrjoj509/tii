@@ -30,15 +30,17 @@ def tiktok_user():
         user["uniqueId"] = re.search(r'"uniqueId":"(.*?)"', html).group(1) if re.search(r'"uniqueId":"(.*?)"', html) else username
         user["nickname"] = re.search(r'"nickname":"(.*?)"', html).group(1) if re.search(r'"nickname":"(.*?)"', html) else None
         user["signature"] = re.search(r'"signature":"(.*?)"', html).group(1) if re.search(r'"signature":"(.*?)"', html) else None
-        user["avatarLarger"] = re.search(r'"avatarLarger":"(.*?)"', html).group(1) if re.search(r'"avatarLarger":"(.*?)"', html) else None
-        user["avatarMedium"] = re.search(r'"avatarMedium":"(.*?)"', html).group(1) if re.search(r'"avatarMedium":"(.*?)"', html) else None
-        user["avatarThumb"] = re.search(r'"avatarThumb":"(.*?)"', html).group(1) if re.search(r'"avatarThumb":"(.*?)"', html) else None
+        user["avatar"] = {
+            "larger": re.search(r'"avatarLarger":"(.*?)"', html).group(1) if re.search(r'"avatarLarger":"(.*?)"', html) else None,
+            "medium": re.search(r'"avatarMedium":"(.*?)"', html).group(1) if re.search(r'"avatarMedium":"(.*?)"', html) else None,
+            "thumb": re.search(r'"avatarThumb":"(.*?)"', html).group(1) if re.search(r'"avatarThumb":"(.*?)"', html) else None,
+        }
         user["createTime"] = create_time
         user["createTimeReadable"] = datetime.utcfromtimestamp(create_time).strftime('%Y-%m-%d %H:%M:%S') if create_time else None
         verified_match = re.search(r'"verified":(true|false)', html)
         user["verified"] = True if verified_match and verified_match.group(1)=="true" else False
         user["region"] = re.search(r'"region":"(.*?)"', html).group(1) if re.search(r'"region":"(.*?)"', html) else None
-        user["country"] = None
+        user["country"] = user["region"]  # نفس المنطقة كـ country (يمكن تعديل لاحقًا)
         user["language"] = re.search(r'"language":"(.*?)"', html).group(1) if re.search(r'"language":"(.*?)"', html) else None
         user["secUid"] = re.search(r'"secUid":"(.*?)"', html).group(1) if re.search(r'"secUid":"(.*?)"', html) else None
 
