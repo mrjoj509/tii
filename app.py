@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 import re
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -11,7 +12,6 @@ def tiktok_user():
         return jsonify({"error": "missing username"}), 400
 
     url = f"https://www.tiktok.com/@{username}"
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
@@ -22,8 +22,6 @@ def tiktok_user():
             return jsonify({"error": "User not found"}), 404
 
         html = resp.text
-
-        # استخراج البيانات الأساسية من الصفحة باستخدام regex
         data = {}
 
         # Display name
@@ -34,7 +32,11 @@ def tiktok_user():
         match = re.search(r'"uniqueId":"(.*?)"', html)
         data["username"] = match.group(1) if match else username
 
-        # Bio
+        # User ID
+        match = re.search(r'"id":"(\d+)"', html)
+        data["user_id"] = match.group(1) if match else None
+
+        # Bio / Signature
         match = re.search(r'"signature":"(.*?)"', html)
         data["bio"] = match.group(1) if match else None
 
@@ -46,24 +48,31 @@ def tiktok_user():
         match = re.search(r'"followingCount":(\d+)', html)
         data["following"] = int(match.group(1)) if match else None
 
-        # Likes
+        # Likes / Hearts
         match = re.search(r'"heartCount":(\d+)', html)
         data["likes"] = int(match.group(1)) if match else None
 
-        # Country / Region
+        # Avatar
+        match = re.search(r'"avatarLarger":"(.*?)"', html)
+        data["avatar"] = match.group(1) if match else None
+
+        # Region / Country
         match = re.search(r'"region":"(.*?)"', html)
         data["region"] = match.group(1) if match else None
 
-        # Creation date (قد يكون غير متوفر)
+        # Creation Time
         match = re.search(r'"createTime":(\d+)', html)
         if match:
-            from datetime import datetime
             data["create_time"] = datetime.utcfromtimestamp(int(match.group(1))).strftime('%Y-%m-%d %H:%M:%S')
         else:
             data["create_time"] = None
 
         # Profile URL
         data["profile_url"] = f"https://www.tiktok.com/@{username}"
+
+        # أي بيانات مهمة أخرى ممكن إضافتها
+        important_matches = re.findall(r'"verified":(true|false)', html)
+        data["verified"] = True if important_matches and important_matches[0]=="true" else False
 
         return jsonify(data)
 
