@@ -1,100 +1,87 @@
-from flask import Flask, request, jsonify
-import requests
-import re
 import json
+import requests
+from flask import Flask, request, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
 
-def ts_to_date(ts):
+def extract_regions(data):
+    """دور على كل region في الريسبونس"""
+    regions = []
+
+    def find_regions(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == "region":
+                    regions.append(v)
+                find_regions(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                find_regions(item)
+
+    find_regions(data)
+
+    return {
+        "all_regions": regions,
+        "unique_regions": list(set(regions)),
+        "count": {r: regions.count(r) for r in set(regions)}
+    }
+
+def convert_time(epoch_time):
     try:
-        return datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.utcfromtimestamp(int(epoch_time)).strftime('%Y-%m-%d %H:%M:%S')
     except:
         return None
 
-@app.route("/tiktok-user", methods=["GET"])
-def tiktok_user():
+@app.route("/tiktok", methods=["GET"])
+def get_tiktok_user():
     username = request.args.get("username")
     if not username:
-        return jsonify({"error": "missing username"}), 400
-
-    url = f"https://www.tiktok.com/@{username}?lang=en"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
+        return jsonify({"error": "الرجاء إدخال اسم المستخدم ?username="}), 400
 
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code != 200:
-            return jsonify({"error": "User not found"}), 404
+        # نجيب بيانات الحساب
+        url = f"https://www.tiktok.com/@{username}?lang=en"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        resp = requests.get(url, headers=headers)
 
-        html = resp.text
+        # استخراج JSON من الصفحة
+        text = resp.text
+        start = text.find('{"props":')
+        end = text.rfind("}") + 1
+        data = json.loads(text[start:end])
 
-        # نبحث عن webapp.user-detail
-        match = re.search(r'"webapp.user-detail":({.*?}),"webapp', html)
-        if not match:
-            return jsonify({"error": "Could not extract userInfo"}), 500
+        # نحاول نوصل للـ userInfo
+        user_info = data.get("webapp.user-detail", {}).get("userInfo", {})
+        user = user_info.get("user", {})
+        stats = user_info.get("stats", {})
 
-        data = json.loads(match.group(1))
-        user = data.get("userInfo", {}).get("user", {})
-        stats = data.get("userInfo", {}).get("stats", {})
-
-        # ===== User Data =====
-        createTime = user.get("createTime")
-        nickNameModifyTime = user.get("nickNameModifyTime")
-
-        user_parsed = {
+        # نرتب الداتا
+        result = {
             "id": user.get("id"),
             "uniqueId": user.get("uniqueId"),
             "nickname": user.get("nickname"),
-            "secUid": user.get("secUid"),
             "signature": user.get("signature"),
-            "avatar": {
-                "larger": user.get("avatarLarger"),
-                "medium": user.get("avatarMedium"),
-                "thumb": user.get("avatarThumb")
-            },
-            "createTime": createTime,
-            "createTimeReadable": ts_to_date(createTime),
-            "nickNameModifyTime": nickNameModifyTime,
-            "nickNameModifyTimeReadable": ts_to_date(nickNameModifyTime),
-            "verified": user.get("verified", False),
+            "avatar": user.get("avatarLarger"),
             "region": user.get("region"),
-            "country": user.get("region"),  # مؤقت نخليها نفس الريجون
-            "language": user.get("language"),
+            "secUid": user.get("secUid"),
+            "createTime": convert_time(user.get("createTime")),
+            "nickNameModifyTime": convert_time(user.get("nickNameModifyTime")),
+            "verified": user.get("verified"),
             "privateAccount": user.get("privateAccount"),
-            "isOrganization": user.get("isOrganization"),
-            "roomId": user.get("roomId"),
-            "openFavorite": user.get("openFavorite"),
-            "commentSetting": user.get("commentSetting"),
-            "duetSetting": user.get("duetSetting"),
-            "stitchSetting": user.get("stitchSetting"),
-            "downloadSetting": user.get("downloadSetting"),
-            "profileTab": user.get("profileTab"),
-            "commerceUserInfo": user.get("commerceUserInfo"),
-            "ttSeller": user.get("ttSeller"),
-            "canExpPlaylist": user.get("canExpPlaylist"),
-            "profileEmbedPermission": user.get("profileEmbedPermission"),
-            "isEmbedBanned": user.get("isEmbedBanned"),
-            "secret": user.get("secret"),
-            "isADVirtual": user.get("isADVirtual"),
-            "relation": user.get("relation"),
-            "risk": user.get("risk"),
-            "device_id": user.get("device_id"),
-            "ip": user.get("ip")
+            "language": user.get("language"),
+            "stats": {
+                "followerCount": stats.get("followerCount"),
+                "followingCount": stats.get("followingCount"),
+                "heartCount": stats.get("heartCount"),
+                "videoCount": stats.get("videoCount"),
+            },
+            "regions_found": extract_regions(data)
         }
 
-        # ===== Stats =====
-        statsV2 = {k: str(v) for k, v in stats.items()}
-
-        response = {
-            "user": user_parsed,
-            "stats": stats,
-            "statsV2": statsV2,
-            "itemList": []
-        }
-
-        return jsonify(response)
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
