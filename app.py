@@ -2,11 +2,11 @@ import json
 import requests
 from flask import Flask, request, jsonify
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 
 def extract_regions(data):
-    """دور على كل region في الريسبونس"""
     regions = []
 
     def find_regions(obj):
@@ -20,7 +20,6 @@ def extract_regions(data):
                 find_regions(item)
 
     find_regions(data)
-
     return {
         "all_regions": regions,
         "unique_regions": list(set(regions)),
@@ -40,25 +39,23 @@ def get_tiktok_user():
         return jsonify({"error": "الرجاء إدخال اسم المستخدم ?username="}), 400
 
     try:
-        # نجيب بيانات الحساب
         url = f"https://www.tiktok.com/@{username}?lang=en"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
         }
         resp = requests.get(url, headers=headers)
 
-        # استخراج JSON من الصفحة
-        text = resp.text
-        start = text.find('{"props":')
-        end = text.rfind("}") + 1
-        data = json.loads(text[start:end])
+        # نبحث عن window.__INIT_PROPS__ = {....};
+        match = re.search(r"window\.__INIT_PROPS__\s*=\s*({.*?});</script>", resp.text, re.S)
+        if not match:
+            return jsonify({"error": "ما قدرت ألقط JSON من الصفحة"}), 500
 
-        # نحاول نوصل للـ userInfo
-        user_info = data.get("webapp.user-detail", {}).get("userInfo", {})
+        data = json.loads(match.group(1))
+
+        user_info = data.get(f"/@{username}", {}).get("webapp.user-detail", {}).get("userInfo", {})
         user = user_info.get("user", {})
         stats = user_info.get("stats", {})
 
-        # نرتب الداتا
         result = {
             "id": user.get("id"),
             "uniqueId": user.get("uniqueId"),
