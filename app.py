@@ -5,11 +5,23 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-def timestamp_to_readable(ts):
+def ts_to_date(ts):
     try:
-        return datetime.utcfromtimestamp(int(ts)).strftime('%Y-%m-%d %H:%M:%S')
+        return datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
     except:
         return None
+
+def extract(pattern, text, group=1, cast=None):
+    match = re.search(pattern, text)
+    if not match:
+        return None
+    value = match.group(group)
+    if cast:
+        try:
+            return cast(value)
+        except:
+            return None
+    return value
 
 @app.route("/tiktok-user", methods=["GET"])
 def tiktok_user():
@@ -29,51 +41,69 @@ def tiktok_user():
 
         html = resp.text
 
-        # ====== Extract user info ======
-        user = {}
-        user["id"] = re.search(r'"id":"(\d+)"', html).group(1) if re.search(r'"id":"(\d+)"', html) else None
-        user["uniqueId"] = re.search(r'"uniqueId":"(.*?)"', html).group(1) if re.search(r'"uniqueId":"(.*?)"', html) else username
-        user["nickname"] = re.search(r'"nickname":"(.*?)"', html).group(1) if re.search(r'"nickname":"(.*?)"', html) else None
-        user["signature"] = re.search(r'"signature":"(.*?)"', html).group(1) if re.search(r'"signature":"(.*?)"', html) else None
-        user["secUid"] = re.search(r'"secUid":"(.*?)"', html).group(1) if re.search(r'"secUid":"(.*?)"', html) else None
-        user["avatar"] = {
-            "larger": re.search(r'"avatarLarger":"(.*?)"', html).group(1) if re.search(r'"avatarLarger":"(.*?)"', html) else None,
-            "medium": re.search(r'"avatarMedium":"(.*?)"', html).group(1) if re.search(r'"avatarMedium":"(.*?)"', html) else None,
-            "thumb": re.search(r'"avatarThumb":"(.*?)"', html).group(1) if re.search(r'"avatarThumb":"(.*?)"', html) else None
+        # ===== User Data =====
+        createTime = extract(r'"createTime":(\d+)', html, cast=int)
+        nickNameModifyTime = extract(r'"nickNameModifyTime":(\d+)', html, cast=int)
+
+        user = {
+            "id": extract(r'"id":"(\d+)"', html),
+            "uniqueId": extract(r'"uniqueId":"(.*?)"', html) or username,
+            "nickname": extract(r'"nickname":"(.*?)"', html),
+            "secUid": extract(r'"secUid":"(.*?)"', html),
+            "signature": extract(r'"signature":"(.*?)"', html),
+            "avatar": {
+                "larger": extract(r'"avatarLarger":"(.*?)"', html),
+                "medium": extract(r'"avatarMedium":"(.*?)"', html),
+                "thumb": extract(r'"avatarThumb":"(.*?)"', html)
+            },
+            "createTime": createTime,
+            "createTimeReadable": ts_to_date(createTime),
+            "nickNameModifyTime": nickNameModifyTime,
+            "nickNameModifyTimeReadable": ts_to_date(nickNameModifyTime),
+            "verified": True if extract(r'"verified":(true|false)', html) == "true" else False,
+            "region": extract(r'"region":"(.*?)"', html),
+            "country": extract(r'"region":"(.*?)"', html),  # مؤقت نستخدم نفس القيمة
+            "language": extract(r'"language":"(.*?)"', html),
+            "privateAccount": True if extract(r'"privateAccount":(true|false)', html) == "true" else False,
+            "isOrganization": extract(r'"isOrganization":(\d+)', html, cast=int),
+            "roomId": extract(r'"roomId":"(.*?)"', html),
+            "openFavorite": True if extract(r'"openFavorite":(true|false)', html) == "true" else False,
+            "commentSetting": extract(r'"commentSetting":(\d+)', html, cast=int),
+            "duetSetting": extract(r'"duetSetting":(\d+)', html, cast=int),
+            "stitchSetting": extract(r'"stitchSetting":(\d+)', html, cast=int),
+            "downloadSetting": extract(r'"downloadSetting":(\d+)', html, cast=int),
+            "profileTab": {
+                "showMusicTab": True if extract(r'"showMusicTab":(true|false)', html) == "true" else False,
+                "showQuestionTab": True if extract(r'"showQuestionTab":(true|false)', html) == "true" else False,
+                "showPlayListTab": True if extract(r'"showPlayListTab":(true|false)', html) == "true" else False,
+            },
+            "commerceUserInfo": {
+                "commerceUser": True if extract(r'"commerceUser":(true|false)', html) == "true" else False
+            },
+            "ttSeller": True if extract(r'"ttSeller":(true|false)', html) == "true" else False,
+            "canExpPlaylist": True if extract(r'"canExpPlaylist":(true|false)', html) == "true" else False,
+            "profileEmbedPermission": extract(r'"profileEmbedPermission":(\d+)', html, cast=int),
+            "isEmbedBanned": True if extract(r'"isEmbedBanned":(true|false)', html) == "true" else False,
+            "secret": True if extract(r'"secret":(true|false)', html) == "true" else False,
+            "isADVirtual": True if extract(r'"isADVirtual":(true|false)', html) == "true" else False,
+            "relation": extract(r'"relation":(\d+)', html, cast=int),
+            "risk": extract(r'"risk":(.*?)[,}]', html),
+            "device_id": extract(r'"device_id":(\d+)', html, cast=int),
+            "ip": extract(r'"ip":"(.*?)"', html)
         }
-        create_time = re.search(r'"createTime":(\d+)', html)
-        user["createTime"] = int(create_time.group(1)) if create_time else None
-        user["createTimeReadable"] = timestamp_to_readable(user["createTime"])
-        nick_mod = re.search(r'"nickNameModifyTime":(\d+)', html)
-        user["nickNameModifyTime"] = int(nick_mod.group(1)) if nick_mod else None
-        user["nickNameModifyTimeReadable"] = timestamp_to_readable(user["nickNameModifyTime"])
-        verified = re.search(r'"verified":(true|false)', html)
-        user["verified"] = True if verified and verified.group(1)=="true" else False
-        region = re.search(r'"region":"(.*?)"', html)
-        user["region"] = region.group(1) if region else None
-        user["country"] = user["region"]
-        language = re.search(r'"language":"(.*?)"', html)
-        user["language"] = language.group(1) if language else None
-        risk = re.search(r'"risk":(.*?)[,}]', html)
-        user["risk"] = risk.group(1) if risk else None
-        device_id = re.search(r'"device_id":(\d+)', html)
-        user["device_id"] = int(device_id.group(1)) if device_id else None
-        ip = re.search(r'"ip":"(.*?)"', html)
-        user["ip"] = ip.group(1) if ip else None
 
-        # ====== Extract stats ======
-        stats = {}
-        stats["followerCount"] = int(re.search(r'"followerCount":(\d+)', html).group(1)) if re.search(r'"followerCount":(\d+)', html) else 0
-        stats["followingCount"] = int(re.search(r'"followingCount":(\d+)', html).group(1)) if re.search(r'"followingCount":(\d+)', html) else 0
-        stats["heart"] = int(re.search(r'"heartCount":(\d+)', html).group(1)) if re.search(r'"heartCount":(\d+)', html) else 0
-        stats["heartCount"] = stats["heart"]
-        stats["videoCount"] = int(re.search(r'"videoCount":(\d+)', html).group(1)) if re.search(r'"videoCount":(\d+)', html) else 0
-        stats["diggCount"] = int(re.search(r'"diggCount":(\d+)', html).group(1)) if re.search(r'"diggCount":(\d+)', html) else 0
-        stats["friendCount"] = int(re.search(r'"friendCount":(\d+)', html).group(1)) if re.search(r'"friendCount":(\d+)', html) else 0
+        # ===== Stats =====
+        stats = {
+            "followerCount": extract(r'"followerCount":(\d+)', html, cast=int) or 0,
+            "followingCount": extract(r'"followingCount":(\d+)', html, cast=int) or 0,
+            "heart": extract(r'"heartCount":(\d+)', html, cast=int) or 0,
+            "videoCount": extract(r'"videoCount":(\d+)', html, cast=int) or 0,
+            "friendCount": extract(r'"friendCount":(\d+)', html, cast=int) or 0,
+            "diggCount": extract(r'"diggCount":(\d+)', html, cast=int) or 0
+        }
 
-        statsV2 = {k:str(v) for k,v in stats.items()}
+        statsV2 = {k: str(v) for k, v in stats.items()}
 
-        # ====== Build final JSON ======
         response = {
             "user": user,
             "stats": stats,
