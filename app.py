@@ -56,10 +56,12 @@ def tiktok_user():
         match = re.search(r'"avatarLarger":"(.*?)"', html)
         data["avatar"] = match.group(1) if match else None
 
-        # Region / Country
+        # Region
         match = re.search(r'"region":"(.*?)"', html)
         data["region"] = match.group(1) if match else None
-        data["country"] = data["region"]  # نفس قيمة الـ region للوضوح
+
+        # Country (فارغ إذا ما فيه بيانات دقيقة)
+        data["country"] = None
 
         # Creation Time
         match = re.search(r'"createTime":(\d+)', html)
