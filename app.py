@@ -59,6 +59,7 @@ def tiktok_user():
         # Region / Country
         match = re.search(r'"region":"(.*?)"', html)
         data["region"] = match.group(1) if match else None
+        data["country"] = data["region"]  # نفس قيمة الـ region للوضوح
 
         # Creation Time
         match = re.search(r'"createTime":(\d+)', html)
@@ -67,12 +68,12 @@ def tiktok_user():
         else:
             data["create_time"] = None
 
+        # Verified
+        match = re.search(r'"verified":(true|false)', html)
+        data["verified"] = True if match and match.group(1) == "true" else False
+
         # Profile URL
         data["profile_url"] = f"https://www.tiktok.com/@{username}"
-
-        # أي بيانات مهمة أخرى ممكن إضافتها
-        important_matches = re.findall(r'"verified":(true|false)', html)
-        data["verified"] = True if important_matches and important_matches[0]=="true" else False
 
         return jsonify(data)
 
