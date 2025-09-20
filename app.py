@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 import requests
 import re
 from datetime import datetime
-import json
 
 app = Flask(__name__)
 
@@ -12,13 +11,25 @@ def ts_to_date(ts):
     except:
         return None
 
+def extract(pattern, text, group=1, cast=None):
+    match = re.search(pattern, text)
+    if not match:
+        return None
+    value = match.group(group)
+    if cast:
+        try:
+            return cast(value)
+        except:
+            return None
+    return value
+
 @app.route("/tiktok-user", methods=["GET"])
 def tiktok_user():
     username = request.args.get("username")
     if not username:
         return jsonify({"error": "missing username"}), 400
 
-    url = f"https://www.tiktok.com/@{username}?lang=en"
+    url = f"https://www.tiktok.com/@{username}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
@@ -30,70 +41,71 @@ def tiktok_user():
 
         html = resp.text
 
-        # نحاول نطلع JSON اللي فيه userInfo
-        match = re.search(r'{"userInfo":{.*?}},"shareMeta', html)
-        if not match:
-            return jsonify({"error": "Could not extract userInfo"}), 500
+        # ===== User Data =====
+        createTime = extract(r'"createTime":(\d+)', html, cast=int)
+        nickNameModifyTime = extract(r'"nickNameModifyTime":(\d+)', html, cast=int)
 
-        raw_json = match.group(0)
-        # نضيف قوس ناقص علشان JSON يكون سليم
-        if raw_json.endswith(',"shareMeta'):
-            raw_json = raw_json[:-11]
-
-        data = json.loads(raw_json)
-
-        user = data.get("userInfo", {}).get("user", {})
-        stats = data.get("userInfo", {}).get("stats", {})
-
-        # نحول createTime و nickNameModifyTime
-        createTime = user.get("createTime")
-        nickNameModifyTime = user.get("nickNameModifyTime")
-
-        user_parsed = {
-            "id": user.get("id"),
-            "uniqueId": user.get("uniqueId"),
-            "nickname": user.get("nickname"),
-            "secUid": user.get("secUid"),
-            "signature": user.get("signature"),
+        user = {
+            "id": extract(r'"id":"(\d+)"', html),
+            "uniqueId": extract(r'"uniqueId":"(.*?)"', html) or username,
+            "nickname": extract(r'"nickname":"(.*?)"', html),
+            "secUid": extract(r'"secUid":"(.*?)"', html),
+            "signature": extract(r'"signature":"(.*?)"', html),
             "avatar": {
-                "larger": user.get("avatarLarger"),
-                "medium": user.get("avatarMedium"),
-                "thumb": user.get("avatarThumb")
+                "larger": extract(r'"avatarLarger":"(.*?)"', html),
+                "medium": extract(r'"avatarMedium":"(.*?)"', html),
+                "thumb": extract(r'"avatarThumb":"(.*?)"', html)
             },
             "createTime": createTime,
             "createTimeReadable": ts_to_date(createTime),
             "nickNameModifyTime": nickNameModifyTime,
             "nickNameModifyTimeReadable": ts_to_date(nickNameModifyTime),
-            "verified": user.get("verified", False),
-            "region": user.get("region"),
-            "country": user.get("region"),  # مؤقت نخليها مثل region
-            "language": user.get("language"),
-            "privateAccount": user.get("privateAccount"),
-            "isOrganization": user.get("isOrganization"),
-            "roomId": user.get("roomId"),
-            "openFavorite": user.get("openFavorite"),
-            "commentSetting": user.get("commentSetting"),
-            "duetSetting": user.get("duetSetting"),
-            "stitchSetting": user.get("stitchSetting"),
-            "downloadSetting": user.get("downloadSetting"),
-            "profileTab": user.get("profileTab"),
-            "commerceUserInfo": user.get("commerceUserInfo"),
-            "ttSeller": user.get("ttSeller"),
-            "canExpPlaylist": user.get("canExpPlaylist"),
-            "profileEmbedPermission": user.get("profileEmbedPermission"),
-            "isEmbedBanned": user.get("isEmbedBanned"),
-            "secret": user.get("secret"),
-            "isADVirtual": user.get("isADVirtual"),
-            "relation": user.get("relation"),
-            "risk": user.get("risk"),
-            "device_id": user.get("device_id"),
-            "ip": user.get("ip")
+            "verified": True if extract(r'"verified":(true|false)', html) == "true" else False,
+            "region": extract(r'"region":"(.*?)"', html),
+            "country": extract(r'"region":"(.*?)"', html),  # مؤقت نستخدم نفس القيمة
+            "language": extract(r'"language":"(.*?)"', html),
+            "privateAccount": True if extract(r'"privateAccount":(true|false)', html) == "true" else False,
+            "isOrganization": extract(r'"isOrganization":(\d+)', html, cast=int),
+            "roomId": extract(r'"roomId":"(.*?)"', html),
+            "openFavorite": True if extract(r'"openFavorite":(true|false)', html) == "true" else False,
+            "commentSetting": extract(r'"commentSetting":(\d+)', html, cast=int),
+            "duetSetting": extract(r'"duetSetting":(\d+)', html, cast=int),
+            "stitchSetting": extract(r'"stitchSetting":(\d+)', html, cast=int),
+            "downloadSetting": extract(r'"downloadSetting":(\d+)', html, cast=int),
+            "profileTab": {
+                "showMusicTab": True if extract(r'"showMusicTab":(true|false)', html) == "true" else False,
+                "showQuestionTab": True if extract(r'"showQuestionTab":(true|false)', html) == "true" else False,
+                "showPlayListTab": True if extract(r'"showPlayListTab":(true|false)', html) == "true" else False,
+            },
+            "commerceUserInfo": {
+                "commerceUser": True if extract(r'"commerceUser":(true|false)', html) == "true" else False
+            },
+            "ttSeller": True if extract(r'"ttSeller":(true|false)', html) == "true" else False,
+            "canExpPlaylist": True if extract(r'"canExpPlaylist":(true|false)', html) == "true" else False,
+            "profileEmbedPermission": extract(r'"profileEmbedPermission":(\d+)', html, cast=int),
+            "isEmbedBanned": True if extract(r'"isEmbedBanned":(true|false)', html) == "true" else False,
+            "secret": True if extract(r'"secret":(true|false)', html) == "true" else False,
+            "isADVirtual": True if extract(r'"isADVirtual":(true|false)', html) == "true" else False,
+            "relation": extract(r'"relation":(\d+)', html, cast=int),
+            "risk": extract(r'"risk":(.*?)[,}]', html),
+            "device_id": extract(r'"device_id":(\d+)', html, cast=int),
+            "ip": extract(r'"ip":"(.*?)"', html)
+        }
+
+        # ===== Stats =====
+        stats = {
+            "followerCount": extract(r'"followerCount":(\d+)', html, cast=int) or 0,
+            "followingCount": extract(r'"followingCount":(\d+)', html, cast=int) or 0,
+            "heart": extract(r'"heartCount":(\d+)', html, cast=int) or 0,
+            "videoCount": extract(r'"videoCount":(\d+)', html, cast=int) or 0,
+            "friendCount": extract(r'"friendCount":(\d+)', html, cast=int) or 0,
+            "diggCount": extract(r'"diggCount":(\d+)', html, cast=int) or 0
         }
 
         statsV2 = {k: str(v) for k, v in stats.items()}
 
         response = {
-            "user": user_parsed,
+            "user": user,
             "stats": stats,
             "statsV2": statsV2,
             "itemList": []
