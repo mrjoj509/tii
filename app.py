@@ -23,7 +23,7 @@ def extract(pattern, text, group=1, cast=None):
             return None
     return value
 
-@app.route("/tiktok-user", methods=["GET"])
+@app.route("/tiktok-user1", methods=["GET"])
 def tiktok_user():
     username = request.args.get("username")
     if not username:
