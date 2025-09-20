@@ -1,8 +1,8 @@
 from flask import Flask, request, jsonify
 import requests
 import re
-import json
 from datetime import datetime
+import json
 
 app = Flask(__name__)
 
@@ -30,16 +30,22 @@ def tiktok_user():
 
         html = resp.text
 
-        # نبحث عن webapp.user-detail
-        match = re.search(r'"webapp.user-detail":({.*?}),"webapp', html)
+        # نحاول نطلع JSON اللي فيه userInfo
+        match = re.search(r'{"userInfo":{.*?}},"shareMeta', html)
         if not match:
             return jsonify({"error": "Could not extract userInfo"}), 500
 
-        data = json.loads(match.group(1))
+        raw_json = match.group(0)
+        # نضيف قوس ناقص علشان JSON يكون سليم
+        if raw_json.endswith(',"shareMeta'):
+            raw_json = raw_json[:-11]
+
+        data = json.loads(raw_json)
+
         user = data.get("userInfo", {}).get("user", {})
         stats = data.get("userInfo", {}).get("stats", {})
 
-        # ===== User Data =====
+        # نحول createTime و nickNameModifyTime
         createTime = user.get("createTime")
         nickNameModifyTime = user.get("nickNameModifyTime")
 
@@ -60,7 +66,7 @@ def tiktok_user():
             "nickNameModifyTimeReadable": ts_to_date(nickNameModifyTime),
             "verified": user.get("verified", False),
             "region": user.get("region"),
-            "country": user.get("region"),  # مؤقت نخليها نفس الريجون
+            "country": user.get("region"),  # مؤقت نخليها مثل region
             "language": user.get("language"),
             "privateAccount": user.get("privateAccount"),
             "isOrganization": user.get("isOrganization"),
@@ -84,7 +90,6 @@ def tiktok_user():
             "ip": user.get("ip")
         }
 
-        # ===== Stats =====
         statsV2 = {k: str(v) for k, v in stats.items()}
 
         response = {
