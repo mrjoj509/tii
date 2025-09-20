@@ -6,26 +6,6 @@ import re
 
 app = Flask(__name__)
 
-def extract_regions(data):
-    regions = []
-
-    def find_regions(obj):
-        if isinstance(obj, dict):
-            for k, v in obj.items():
-                if k == "region":
-                    regions.append(v)
-                find_regions(v)
-        elif isinstance(obj, list):
-            for item in obj:
-                find_regions(item)
-
-    find_regions(data)
-    return {
-        "all_regions": regions,
-        "unique_regions": list(set(regions)),
-        "count": {r: regions.count(r) for r in set(regions)}
-    }
-
 def convert_time(epoch_time):
     try:
         return datetime.utcfromtimestamp(int(epoch_time)).strftime('%Y-%m-%d %H:%M:%S')
@@ -41,31 +21,18 @@ def get_tiktok_user():
     try:
         url = f"https://www.tiktok.com/@{username}?lang=en"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1 OPT/6.1.2"
         }
         resp = requests.get(url, headers=headers)
 
-        # نلقط أي بلوك JSON كبير
-        matches = re.findall(r"{\"props\":.*}</script>", resp.text, re.S)
-        if not matches:
+        # نبحث عن window.__INIT_PROPS__ = {....};
+        match = re.search(r"window\.__INIT_PROPS__\s*=\s*({.*?});</script>", resp.text, re.S)
+        if not match:
             return jsonify({"error": "ما قدرت ألقط JSON من الصفحة"}), 500
 
-        # ناخذ أول واحد
-        raw_json = matches[0]
-        raw_json = raw_json[:raw_json.rfind("}")+1]  # نتاكد ينتهي بـ }
+        data = json.loads(match.group(1))
 
-        data = json.loads(raw_json)
-
-        # ندور على userInfo
-        user_info = None
-        for k, v in data.items():
-            if isinstance(v, dict) and "webapp.user-detail" in v:
-                user_info = v["webapp.user-detail"].get("userInfo", {})
-                break
-
-        if not user_info:
-            return jsonify({"error": "ما لقيت userInfo"}), 500
-
+        user_info = data.get(f"/@{username}", {}).get("webapp.user-detail", {}).get("userInfo", {})
         user = user_info.get("user", {})
         stats = user_info.get("stats", {})
 
@@ -75,7 +42,7 @@ def get_tiktok_user():
             "nickname": user.get("nickname"),
             "signature": user.get("signature"),
             "avatar": user.get("avatarLarger"),
-            "region": user.get("region"),
+            "region": user.get("region"),  # ← فقط واحد
             "secUid": user.get("secUid"),
             "createTime": convert_time(user.get("createTime")),
             "nickNameModifyTime": convert_time(user.get("nickNameModifyTime")),
@@ -87,8 +54,7 @@ def get_tiktok_user():
                 "followingCount": stats.get("followingCount"),
                 "heartCount": stats.get("heartCount"),
                 "videoCount": stats.get("videoCount"),
-            },
-            "regions_found": extract_regions(data)
+            }
         }
 
         return jsonify(result)
