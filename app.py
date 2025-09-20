@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, Response
 import requests
 import re
 import json
@@ -12,11 +12,15 @@ def ts_to_date(ts):
     except:
         return None
 
-@app.route("/tiktov1", methods=["GET"])
+@app.route("/tiktok", methods=["GET"])
 def tiktok_user():
     username = request.args.get("username")
     if not username:
-        return jsonify({"error": "missing username"}), 400
+        return Response(
+            json.dumps({"error": "missing username"}, ensure_ascii=False, indent=4),
+            mimetype="application/json",
+            status=400
+        )
 
     url = f"https://www.tiktok.com/@{username}?lang=en"
     headers = {
@@ -26,20 +30,25 @@ def tiktok_user():
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code != 200:
-            return jsonify({"error": "User not found"}), 404
+            return Response(
+                json.dumps({"error": "User not found"}, ensure_ascii=False, indent=4),
+                mimetype="application/json",
+                status=404
+            )
 
         html = resp.text
-
-        # نبحث عن webapp.user-detail
         match = re.search(r'"webapp.user-detail":({.*?}),"webapp', html)
         if not match:
-            return jsonify({"error": "Could not extract userInfo"}), 500
+            return Response(
+                json.dumps({"error": "Could not extract userInfo"}, ensure_ascii=False, indent=4),
+                mimetype="application/json",
+                status=500
+            )
 
         data = json.loads(match.group(1))
         user = data.get("userInfo", {}).get("user", {})
         stats = data.get("userInfo", {}).get("stats", {})
 
-        # ===== User Data =====
         createTime = user.get("createTime")
         nickNameModifyTime = user.get("nickNameModifyTime")
 
@@ -60,7 +69,7 @@ def tiktok_user():
             "nickNameModifyTimeReadable": ts_to_date(nickNameModifyTime),
             "verified": user.get("verified", False),
             "region": user.get("region"),
-            "country": user.get("region"),  # مؤقت نخليها نفس الريجون
+            "country": user.get("region"),
             "language": user.get("language"),
             "privateAccount": user.get("privateAccount"),
             "isOrganization": user.get("isOrganization"),
@@ -84,7 +93,6 @@ def tiktok_user():
             "ip": user.get("ip")
         }
 
-        # ===== Stats =====
         statsV2 = {k: str(v) for k, v in stats.items()}
 
         response = {
@@ -94,10 +102,17 @@ def tiktok_user():
             "itemList": []
         }
 
-        return jsonify(response)
+        return Response(
+            json.dumps(response, ensure_ascii=False, indent=4),
+            mimetype="application/json"
+        )
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return Response(
+            json.dumps({"error": str(e)}, ensure_ascii=False, indent=4),
+            mimetype="application/json",
+            status=500
+        )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
