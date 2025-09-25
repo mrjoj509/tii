@@ -192,7 +192,7 @@ class MobileFlowFlexible:
                     'x-ladon': signature.get('x-ladon', ''),
                 })
 
-                url = f"https://{host}/passport/account_lookup/email/"
+                url = f"https://{host}/passport/account_lookup/username/"
                 try:
                     resp = await asyncio.to_thread(self.session.post, url, params=params, headers=headers, timeout=timeout_per_host)
                     try:
