@@ -243,7 +243,7 @@ class MobileFlowFlexible:
         params['_rticket'] = int(ts * 1000)
         params['not_login_ticket'] = passport_ticket
         params['email'] = mail
-        params['type'] = "31"
+        params['type'] = "3737"
         params.pop('fixed_mix_mode', None)
         params.pop('account_param', None)
 
