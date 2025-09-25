@@ -297,8 +297,6 @@ class MobileFlowFlexible:
 # Flask API
 # ============================================
 app = Flask(__name__)
-EMAIL_REGEX = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
-
 @app.route("/extract", methods=["GET"])
 def extract():
     raw_username = request.args.get("username", "")
