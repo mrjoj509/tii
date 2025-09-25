@@ -301,27 +301,20 @@ EMAIL_REGEX = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
 
 @app.route("/extract", methods=["GET"])
 def extract():
-    raw_email = request.args.get("email", "")
+    raw_username = request.args.get("username", "")
     timeout_mailbox = int(request.args.get("timeout_mailbox", "120"))
-    email = unquote(raw_email).strip()
+    username_input = unquote(raw_username).strip()
 
-    if not email:
+    if not username_input:
         return jsonify({
-            "input": email,
+            "input": username_input,
             "status": "error",
-            "message": "Parameter 'email' is required."
+            "message": "Parameter 'username' is required."
         }), 400
 
-    if not EMAIL_REGEX.match(email):
-        return jsonify({
-            "input": email,
-            "status": "error",
-            "message": "Invalid email format."
-        }), 400
+    print(f"[LOG] استعلام جديد باليوزر: {username_input}")
 
-    print(f"[LOG] استعلام جديد بالايميل: {email}")
-
-    flow = MobileFlowFlexible(account_param=email)
+    flow = MobileFlowFlexible(account_param=username_input)
 
     async def run_flow():
         try:
@@ -329,7 +322,7 @@ def extract():
         except Exception as e:
             print(f"[LOG] خطأ أثناء البحث عن passport_ticket: {e}")
             return {
-                "input": email,
+                "input": username_input,
                 "status": "error",
                 "message": "خطأ أثناء الاتصال بـ TikTok API",
                 "username": None,
@@ -342,7 +335,7 @@ def extract():
 
         if not ticket:
             return {
-                "input": email,
+                "input": username_input,
                 "status": "not_found",
                 "username": None,
                 "passport_ticket": None,
@@ -370,7 +363,7 @@ def extract():
                 tiktokinfo = {"message": "User information is not available, please try again."}
 
         return {
-            "input": email,
+            "input": username_input,
             "status": status_final,
             "username": username,
             "passport_ticket": ticket,
@@ -382,7 +375,6 @@ def extract():
 
     result = asyncio.run(run_flow())
     return jsonify(result)
-
 # ============================================
 # Run Flask
 # ============================================
